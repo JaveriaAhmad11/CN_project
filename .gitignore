@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+p2p_project.zip
+selftest_data/
+data_*/
+results/
+*.bin
