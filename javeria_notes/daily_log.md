@@ -52,7 +52,7 @@ When I ran the test script, it printed `24` (22 header + 2 payload). When I flip
 ![alt text](image.png)
 
 ### 🚧 Blockers / Questions for the team:
-- (Write anything here you got stuck on, or leave it blank if it went perfectly)
+- N/A
 
 ---
 
@@ -60,10 +60,10 @@ When I ran the test script, it printed `24` (22 header + 2 payload). When I flip
 **Goal:** Write the unit test (`test_reliable.py`).
 
 ### 🛠️ What I did today:
-- [ ] Created `test_reliable.py` with 20% packet loss.
-- [ ] Ran the test. Received all 100 messages in order!
-- [ ] Took screenshot (`javeria_unit_test.png`).
-- [ ] Did the group teach-in for `protocol.py` and `reliable.py`.
+- [x] Created `test_reliable.py` with 20% packet loss.
+- [x] Ran the test. Received all 100 messages in order!
+- [x] Took screenshot (`javeria_unit_test.png`).
+- [x] Did the group teach-in for `protocol.py` and `reliable.py`.
 
 ### 📝 My Notes:
 - The test proves reliability works. Even with 20% loss, the window, ACKs, and timeouts fixed it.
