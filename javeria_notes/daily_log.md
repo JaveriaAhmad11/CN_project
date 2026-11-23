@@ -67,8 +67,8 @@ When I ran the test script, it printed `24` (22 header + 2 payload). When I flip
 
 ### 📝 My Notes:
 - The test proves reliability works. Even with 20% loss, the window, ACKs, and timeouts fixed it.
-- Retransmissions: (write the number the terminal gave you)
-- Duplicates dropped: (write the number the terminal gave you)
+- Retransmissions: (write the exact number your terminal gave you when you got `True`)
+- Duplicates dropped: (write the exact number your terminal gave you)
 
 ---
 
@@ -76,14 +76,14 @@ When I ran the test script, it printed `24` (22 header + 2 payload). When I flip
 **Goal:** Break things on purpose to understand trade-offs.
 
 ### 🛠️ What I did today:
-- [ ] **Exp 1 (No Window):** Changed `WINDOW = 1` in `reliable.py`. Observed: Download time got way bigger. Taught me: Window of 1 is stop-and-wait, very slow.
-- [ ] **Exp 2 (Huge Loss):** Changed `Wire(0.2)` to `Wire(0.5)` in test. Observed: Still 100 in order, but way more retransmissions. Taught me: Reliability survives bad networks, at a price.
-- [ ] **Exp 3 (No ACK for dupes):** Commented out ACK line in `on_data`. Observed: Test got stuck. Taught me: We MUST ACK duplicates or sender resends forever.
-- [ ] **Exp 4 (Long Timeout):** Changed `MIN_TIMEOUT = 1.0`. Observed: Takes longer to finish. Taught me: Timeout trades speed for fewer needless resends.
-- [ ] Reverted all code changes back to original.
+- [x] **Exp 1 (No Window):** Changed `WINDOW = 1` in `reliable.py`. Observed: Download time got way bigger. Taught me: Window of 1 is stop-and-wait, very slow.
+- [x] **Exp 2 (Huge Loss):** Changed `Wire(0.2)` to `Wire(0.5)` in test. Observed: Test failed to finish in 8 seconds (`received 33 in order: False`). Huge retransmissions. Taught me: At 50% loss, reliability survives, but the 8-second timer runs out before all data arrives. It is very slow.
+- [x] **Exp 3 (No ACK for dupes):** Commented out ACK line in `on_data`. Observed: Test failed (`received 32 in order: False`) with 118 duplicates dropped. Taught me: We MUST ACK duplicates or the sender gets stuck resending forever.
+- [x] **Exp 4 (Long Timeout):** Changed `MIN_TIMEOUT = 1.0`. Observed: Takes longer to finish. Taught me: Timeout trades speed for fewer needless resends.
+- [x] Reverted all code changes back to original.
 
 ### 🚧 Blockers / Questions:
-- 
+- (Leave blank if none)
 
 ---
 
