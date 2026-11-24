@@ -179,6 +179,7 @@ class Peer:
             self.members.left.add(pkt.sender)
             if name:
                 self.log("\n* %s left" % name)
+            threading.Thread(target=self.delayed_repair, daemon=True).start()
             return
 
         name = None
@@ -287,7 +288,7 @@ class Peer:
         self.storage.add_manifest(manifest)
         self.send_to_all(STREAM_CONTROL, FILE_LIST, encode_json({"files": [manifest]}))
         for idx, data in enumerate(chunks):
-            for holder in chunk_holders(idx, everyone):
+            for holder in chunk_holders(file_id, idx, everyone):
                 if holder == self.my_id:
                     self.store_chunk(file_id, idx, data)
                 else:

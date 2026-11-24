@@ -41,6 +41,9 @@ os.makedirs(FOLDER)
 test_file = os.path.join(FOLDER, "test.bin")
 with open(test_file, "wb") as f:
     f.write(os.urandom(2 * 1024 * 1024))
+test_file2 = os.path.join(FOLDER, "test2.bin")
+with open(test_file2, "wb") as f:
+    f.write(os.urandom(2 * 1024 * 1024))
 
 # ---- 1. four peers join (first one is the bootstrap) ----
 peers = []
@@ -73,16 +76,19 @@ print("      retransmissions by P0 on chat stream:", peers[0].retransmissions(1)
 for p in peers:
     p.sock.loss = 0.0
 peers[0].share(test_file)
-fid = peers[0].storage.all_manifests()[0]["file_id"]
-n = peers[0].storage.all_manifests()[0]["num_chunks"]
-check("file shared: every chunk has 2 holders on every peer's map",
-      wait_until(lambda: all(len(p.storage.holders(fid, i)) >= 2 for p in peers for i in range(n))))
-check("no single peer holds the whole file", all(p.storage.my_chunk_count(fid) < n for p in peers))
-
+peers[0].share(test_file2)
+mans = peers[0].storage.all_manifests()
+fid, n = mans[0]["file_id"], mans[0]["num_chunks"]
+fid2, n2 = mans[1]["file_id"], mans[1]["num_chunks"]
+check("both files shared: every chunk has 2 holders on every peer's map",
+      wait_until(lambda: all(len(p.storage.holders(fid, i)) >= 2 for p in peers for i in range(n))
+                 and all(len(p.storage.holders(fid2, i)) >= 2 for p in peers for i in range(n2))))
+check("no single peer holds a whole file",
+      all(p.storage.my_chunk_count(fid) < n and p.storage.my_chunk_count(fid2) < n2 for p in peers))
 # ---- 4. late joiner takes over its share ----
 late = Peer("LATE", PORT + 4, ("127.0.0.1", PORT), 0.0, os.path.join(FOLDER, "late"), verbose=False)
 late.start()
-check("late joiner received the file list", wait_until(lambda: len(late.storage.all_manifests()) == 1))
+check("late joiner received the file list", wait_until(lambda: len(late.storage.all_manifests()) == 2))
 check("late joiner took over some chunks", wait_until(lambda: late.storage.my_chunk_count(fid) > 0, 30))
 
 # ---- 5. multi-source download with 10% loss ----
@@ -94,7 +100,11 @@ if result:
     same = open(result["path"], "rb").read() == open(test_file, "rb").read()
     check("downloaded file identical to original", same)
     check("chunks came from at least 2 peers", len(result["chunks_from"]) >= 2)
-
+result2 = peers[3].download("test2.bin")
+check("second file download completed (10% loss)", result2 is not None)
+if result2:
+    same2 = open(result2["path"], "rb").read() == open(test_file2, "rb").read()
+    check("second file identical to original", same2)
 # ---- 6. kill a peer while downloading ----
 for p in peers + [late]:
     p.sock.loss = 0.0
@@ -116,6 +126,18 @@ if box.get("r"):
 # ---- 7. failure detection ----
 check("others noticed the dead peer (heartbeat)",
       wait_until(lambda: not peers[0].members.is_alive(peers[1].my_id), 15))
+
+def all_chunks_have_2_live_copies():
+    for m in peers[0].storage.all_manifests():
+        for i in range(m["num_chunks"]):
+            live = [h for h in peers[0].storage.holders(m["file_id"], i)
+                    if h == peers[0].my_id or peers[0].members.is_alive(h)]
+            if len(live) < 2:
+                return False
+    return True
+
+check("repair restored 2 live copies of every chunk",
+      wait_until(all_chunks_have_2_live_copies, 40))
 
 print("\nRESULT:", "SOME TESTS FAILED" if failed else "ALL TESTS PASSED")
 for p in peers + [late]:

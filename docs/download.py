@@ -231,7 +231,7 @@ class Downloader:
         for m in peer.storage.all_manifests():
             file_id = m["file_id"]
             for idx in range(m["num_chunks"]):
-                if me in st.chunk_holders(idx, everyone) and not peer.storage.has_chunk(file_id, idx):
+                if me in st.chunk_holders(file_id, idx, everyone) and not peer.storage.has_chunk(file_id, idx):
                     if self.fetch_any(file_id, idx):
                         taken += 1
         peer.log("Took over %d chunks as my share." % taken)
@@ -241,20 +241,19 @@ class Downloader:
     # PEER LEFT: re-create lost replicas (every chunk should have REPLICAS live copies)
     # ------------------------------------------------------------------
     def repair(self):
-        peer = self.peer
-        me = peer.my_id
+        peer, me = self.peer, self.peer.my_id
         alive = sorted(peer.members.alive_ids() + [me])
         want = min(st.REPLICAS, len(alive))
         fixed = 0
         for m in peer.storage.all_manifests():
-            file_id = m["file_id"]
+            fid = m["file_id"]
             for idx in range(m["num_chunks"]):
-                live = [p for p in peer.storage.holders(file_id, idx) if p in alive]
+                live = [p for p in peer.storage.holders(fid, idx) if p in alive]
                 if not live or len(live) >= want:
                     continue                      # healthy, or lost completely (cannot fix)
-                candidates = [p for p in alive if p not in live]
-                if candidates and candidates[0] == me:    # lowest id without a copy does the work
-                    if self.fetch_any(file_id, idx):
+                # rendezvous decides who SHOULD hold this chunk among the survivors
+                if me in st.chunk_holders(fid, idx, alive) and not peer.storage.has_chunk(fid, idx):
+                    if self.fetch_any(fid, idx):
                         fixed += 1
         if fixed:
             peer.log("Repair: re-created %d chunk replicas." % fixed)
