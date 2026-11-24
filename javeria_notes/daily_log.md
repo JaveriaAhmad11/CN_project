@@ -91,14 +91,14 @@ When I ran the test script, it printed `24` (22 header + 2 payload). When I flip
 **Goal:** Protocol Specification Report Section.
 
 ### 🛠️ What I did today:
-- [ ] Created `report/report_draft.md`.
-- [ ] Wrote the Header Table.
-- [ ] Wrote the Message Type Table (JOIN, CHAT, ACK, etc.).
-- [ ] Wrote the Expected Message Sequence for Join, Chat, Download, and Failure.
-- [ ] Added the `javeria_crc_proof.png` screenshot to the report.
+- [x] Created `report/report_draft.md`.
+- [x] Wrote the Header Table.
+- [x] Wrote the Message Type Table (JOIN, CHAT, ACK, etc.).
+- [x] Wrote the Expected Message Sequence for Join, Chat, Download, and Failure.
+- [x] Added the `javeria_crc_proof.png` screenshot to the report.
 
 ### 📝 My Notes:
-- (Add any notes here)
+- drafted this report for other members to make their edits.
 
 ---
 
