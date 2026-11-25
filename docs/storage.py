@@ -37,14 +37,23 @@ def make_manifest(path):
     }
     return manifest, chunks
 
+def chunk_holders(file_id, chunk_idx, peer_ids):
+    """
+    Rendezvous (Highest Random Weight) Hashing.
+    score = SHA-256(file_id + chunk_idx + peer_id)
+    Return top REPLICAS peers with highest scores.
+    """
+    ids = list(peer_ids)
+    if not ids:
+        return []
+    r = min(REPLICAS, len(ids))
 
-def chunk_holders(chunk_idx, peer_ids):
-    """Replica placement: chunk i goes to peers sorted[(i+k) % N] for k = 0..R-1."""
-    ids = sorted(peer_ids)
-    n = len(ids)
-    r = min(REPLICAS, n)
-    return [ids[(chunk_idx + k) % n] for k in range(r)]
+    def score(peer_id):
+        key = f"{file_id}:{chunk_idx}:{peer_id}".encode()
+        return hashlib.sha256(key).hexdigest()
 
+    ranked = sorted(ids, key=score, reverse=True)
+    return ranked[:r]
 
 class Storage:
     def __init__(self, folder):

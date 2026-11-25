@@ -19,6 +19,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 import storage
+from protocol import decode_json
 from peer import Peer
 
 QUICK = "quick" in sys.argv
@@ -127,10 +128,12 @@ def exp_loss():
             stop_all(peers + [d])
         avg = sum(times) / len(times)
         print("  loss %2d%% -> %.2f s" % (loss, avg))
-        rows.append((loss, round(avg, 2)))
-    save_csv("download_vs_loss.csv", ["loss_percent", "seconds"], rows)
+        rows.append((loss, round(avg, 2), round(FILE_SIZE / 1e6 / avg, 2)))
+    save_csv("download_vs_loss.csv", ["loss_percent", "seconds", "MB_per_s"], rows)
     save_plot("download_vs_loss.png", [r[0] for r in rows], [r[1] for r in rows],
               "Packet loss (%)", "Download time (s)", "Download time vs packet loss (2 MB file)")
+    save_plot("throughput_vs_loss.png", [r[0] for r in rows], [r[2] for r in rows],
+              "Packet loss (%)", "Throughput (MB/s)", "Throughput vs packet loss (2 MB file)")
 
 
 def exp_sources():
@@ -230,6 +233,45 @@ def exp_storage():
               "Replication factor R", "Total storage / file size", "Storage overhead vs replication")
 
 
+def exp_chat_latency():
+    """Chat latency: idle network vs while files are being downloaded non-stop."""
+    print("Experiment 6: chat latency (idle vs during download)")
+    storage.REPLICAS = 2
+    rows = []
+    for busy in [False, True]:
+        peers, fid, base = make_cluster(4)
+        lat = []                                   # seconds, one entry per delivered message
+        for p in peers[1:]:
+            orig = p.chat.on_chat                  # replace the method at runtime to time it
+            def timed(sender, data, orig=orig):
+                lat.append(time.time() - decode_json(data)["time"])
+                orig(sender, data)
+            p.chat.on_chat = timed
+        d = None
+        stop = threading.Event()
+        if busy:
+            d = add_downloader(peers, base)
+            def hammer():                          # keep the file stream busy the whole time
+                while not stop.is_set():
+                    d.download("exp.bin")
+            threading.Thread(target=hammer, daemon=True).start()
+            time.sleep(0.3)
+        for i in range(50):
+            peers[0].chat.send("L%d" % i)
+            time.sleep(0.1)                        # about 10 messages per second
+        wait_until(lambda: len(lat) >= 150, 20)    # 50 messages x 3 receivers
+        stop.set()
+        lat.sort()
+        mean = 1000 * sum(lat) / len(lat) if lat else float("nan")
+        p95 = 1000 * lat[int(0.95 * (len(lat) - 1))] if lat else float("nan")
+        label = "during download" if busy else "idle"
+        print("  %-16s mean %.1f ms, 95th percentile %.1f ms" % (label, mean, p95))
+        rows.append((label, round(mean, 1), round(p95, 1)))
+        stop_all(peers + ([d] if d else []))
+    save_csv("chat_latency.csv", ["condition", "mean_ms", "p95_ms"], rows)
+    save_plot("chat_latency.png", [r[0] for r in rows], [r[1] for r in rows],
+              "", "Mean chat latency (ms)", "Chat latency: idle vs during download", bar=True)
+
 if __name__ == "__main__":
     shutil.rmtree(FOLDER, ignore_errors=True)
     os.makedirs(FOLDER)
@@ -237,6 +279,7 @@ if __name__ == "__main__":
     exp_loss()
     exp_sources()
     exp_chat()
+    exp_chat_latency()
     exp_recovery()
     exp_storage()
     print("\nDone. See the folder:", RESULTS)
