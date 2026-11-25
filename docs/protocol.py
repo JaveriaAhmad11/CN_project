@@ -41,11 +41,12 @@ CHUNK_ANNOUNCE = 9   # "I now store chunk X"      (reliable)
 CHUNK_REQUEST = 10   # "send me chunk X"          (reliable)
 CHUNK_DATA = 11      # chunk bytes                (reliable)
 CHUNK_NACK = 12      # "I don't have chunk X"     (reliable)
+HISTORY = 13         # recent chat messages for a newcomer (reliable, chat stream)
 
 TYPE_NAMES = {
     1: "JOIN", 2: "JOIN_REPLY", 3: "LEAVE", 4: "HEARTBEAT", 5: "CHAT", 6: "ACK",
     7: "FILE_LIST", 8: "CHUNK_MAP", 9: "CHUNK_ANNOUNCE", 10: "CHUNK_REQUEST",
-    11: "CHUNK_DATA", 12: "CHUNK_NACK",
+    11: "CHUNK_DATA", 12: "CHUNK_NACK", 13: "HISTORY",
 }
 
 # ---------------- streams (separate sequence numbers, so chat never waits for files) ----

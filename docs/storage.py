@@ -8,6 +8,7 @@ Everything about files:
   * saving / loading chunks on disk (folder data_<port>/chunks)
 """
 import hashlib
+import json
 import os
 import threading
 
@@ -47,6 +48,7 @@ def chunk_holders(chunk_idx, peer_ids):
 
 class Storage:
     def __init__(self, folder):
+        self.folder = folder
         self.chunk_dir = os.path.join(folder, "chunks")
         self.download_dir = os.path.join(folder, "downloads")
         os.makedirs(self.chunk_dir, exist_ok=True)
@@ -54,14 +56,29 @@ class Storage:
         self.manifests = {}      # file_id -> manifest
         self.chunk_map = {}      # file_id -> {chunk_idx: set(peer_ids)}
         self.lock = threading.RLock()
+        self.manifest_path = os.path.join(folder, "manifests.json")
+        self._load_manifests()
 
-    # ---------------- manifests ----------------
+    # ---------------- manifests (also saved on disk, so a restarted peer remembers its files) ----
+    def _load_manifests(self):
+        try:
+            with open(self.manifest_path) as f:
+                for m in json.load(f):
+                    self.manifests[m["file_id"]] = m
+        except (OSError, ValueError):
+            pass
+
+    def _save_manifests(self):
+        with open(self.manifest_path, "w") as f:
+            json.dump(list(self.manifests.values()), f)
+
     def add_manifest(self, manifest):
         """Returns True if this file was not known before."""
         with self.lock:
             if manifest["file_id"] in self.manifests:
                 return False
             self.manifests[manifest["file_id"]] = manifest
+            self._save_manifests()
             return True
 
     def all_manifests(self):
@@ -124,3 +141,54 @@ class Storage:
             for idx, holders in d.items():
                 for peer_id in holders:
                     self.add_holder(file_id, int(idx), peer_id)
+
+    def remove_holder(self, file_id, idx, peer_id):
+        with self.lock:
+            self.chunk_map.get(file_id, {}).get(idx, set()).discard(peer_id)
+
+    # ---------------- storage maintenance ----------------
+    def local_chunks(self):
+        """All (file_id, chunk_index) chunk files that are on disk."""
+        found = []
+        for name in os.listdir(self.chunk_dir):
+            if name.endswith(".chunk"):
+                try:
+                    file_id, idx = name[:-6].rsplit("_", 1)
+                    found.append((file_id, int(idx)))
+                except ValueError:
+                    pass
+        return found
+
+    def delete_chunk(self, file_id, idx):
+        try:
+            os.remove(self._path(file_id, idx))
+        except OSError:
+            pass
+
+    def verify_local(self):
+        """Check every stored chunk against the SHA-256 in its manifest.
+        Corrupt chunks are deleted. Returns the list of (file_id, idx) that were bad."""
+        bad = []
+        for file_id, idx in self.local_chunks():
+            m = self.manifests.get(file_id)
+            if m is None or idx >= m["num_chunks"]:
+                continue
+            data = self.load_chunk(file_id, idx)
+            if data is None or sha256(data) != m["chunk_hashes"][idx]:
+                self.delete_chunk(file_id, idx)
+                bad.append((file_id, idx))
+        return bad
+
+    def disk_report(self):
+        """Returns (per_file, orphans).
+        per_file: file_id -> [number of chunks, bytes];  orphans: chunk files of unknown files."""
+        per_file = {}
+        orphans = []
+        for file_id, idx in self.local_chunks():
+            if file_id not in self.manifests:
+                orphans.append((file_id, idx))
+                continue
+            entry = per_file.setdefault(file_id, [0, 0])
+            entry[0] += 1
+            entry[1] += os.path.getsize(self._path(file_id, idx))
+        return per_file, orphans

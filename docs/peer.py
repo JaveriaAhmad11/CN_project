@@ -8,6 +8,10 @@ Starts all threads of one peer and gives you a command line:
     /share <path>        share a file (split into chunks, spread over peers)
     /download <name>     download a file from several peers in parallel
     /map <name>          show which peer stores how many chunks
+    /history [n]         show the last n chat messages (default 20), also from earlier sessions
+    /storage             show disk usage, copies per file, orphan chunks
+    /scrub               re-check every stored chunk (SHA-256); re-download corrupt ones
+    /cleanup             delete extra copies (keep exactly R) and orphan chunk files
     /stats               packets sent / dropped / retransmitted
     /loss <0-1>          simulate packet loss, e.g. /loss 0.1
     /delay <seconds>     slow down downloads (so you have time to kill a peer in the demo)
@@ -106,6 +110,7 @@ class Peer:
                 break
         if self.takeover:
             time.sleep(1)                            # give FILE_LIST / CHUNK_MAP time to arrive
+            self.reannounce_local()                  # chunks from a previous session count again
             self.downloader.take_share()
 
     # ------------------------------------------------------------------
@@ -206,9 +211,14 @@ class Peer:
                 self.on_file_list(data)
             elif msg_type == CHUNK_MAP:
                 self.storage.merge_map(decode_json(data))
+            elif msg_type == HISTORY:
+                self.chat.on_history(sender, data)
             elif msg_type == CHUNK_ANNOUNCE:
                 a = decode_json(data)
-                self.storage.add_holder(a["file_id"], a["idx"], a["peer"])
+                if a.get("gone"):                    # that peer deleted its copy
+                    self.storage.remove_holder(a["file_id"], a["idx"], a["peer"])
+                else:
+                    self.storage.add_holder(a["file_id"], a["idx"], a["peer"])
             elif msg_type == CHUNK_REQUEST:
                 self.serve_chunk(sender, data)
             elif msg_type == CHUNK_DATA:
@@ -231,6 +241,7 @@ class Peer:
         self.send_reliable(s, STREAM_CONTROL, JOIN_REPLY, encode_json({"peers": self.members.snapshot()}))
         self.send_reliable(s, STREAM_CONTROL, FILE_LIST, encode_json({"files": self.storage.all_manifests()}))
         self.send_reliable(s, STREAM_CONTROL, CHUNK_MAP, encode_json(self.storage.export_map()))
+        self.chat.send_history_to(s)                 # old chat messages for the newcomer
 
     def on_join_reply(self, sender, data):
         for p in decode_json(data).get("peers", []):
@@ -296,6 +307,53 @@ class Peer:
         self.log("Shared %s: %d chunks, each on %d peers." % (
             manifest["name"], len(chunks), min(storage_mod.REPLICAS, len(everyone))))
 
+    # ------------------------------------------------------------------
+    # storage maintenance
+    # ------------------------------------------------------------------
+    def reannounce_local(self):
+        """After a restart we have a NEW id: tell everybody which chunks we still have on disk."""
+        count = 0
+        for file_id, idx in self.storage.local_chunks():
+            if file_id in self.storage.manifests:
+                self.storage.add_holder(file_id, idx, self.my_id)
+                self.send_to_all(STREAM_CONTROL, CHUNK_ANNOUNCE,
+                                 encode_json({"file_id": file_id, "idx": idx, "peer": self.my_id}))
+                count += 1
+        if count:
+            self.log("Re-announced %d chunks found on disk." % count)
+        return count
+
+    def scrub(self):
+        """Integrity check of everything we store. Corrupt chunks are deleted and fetched again."""
+        bad = self.storage.verify_local()
+        fixed = 0
+        for file_id, idx in bad:
+            self.storage.remove_holder(file_id, idx, self.my_id)
+            if self.downloader.fetch_any(file_id, idx):
+                fixed += 1
+        self.log("Scrub: %d corrupt chunks found, %d re-downloaded." % (len(bad), fixed))
+        return len(bad), fixed
+
+    def cleanup(self):
+        """Delete extra copies and orphan chunk files.
+        Rule: when a chunk has more than R live copies, only the R holders with the LOWEST ids keep it.
+        Every peer computes the same answer, so the peers never delete the last copies together."""
+        alive = set(self.members.alive_ids() + [self.my_id])
+        extra = 0
+        per_file, orphans = self.storage.disk_report()
+        for file_id, idx in orphans:                       # chunk files of files we do not know
+            self.storage.delete_chunk(file_id, idx)
+        for file_id, idx in self.storage.local_chunks():
+            live = sorted(p for p in self.storage.holders(file_id, idx) if p in alive)
+            if len(live) > storage_mod.REPLICAS and self.my_id not in live[:storage_mod.REPLICAS]:
+                self.storage.delete_chunk(file_id, idx)
+                self.storage.remove_holder(file_id, idx, self.my_id)
+                self.send_to_all(STREAM_CONTROL, CHUNK_ANNOUNCE, encode_json(
+                    {"file_id": file_id, "idx": idx, "peer": self.my_id, "gone": True}))
+                extra += 1
+        self.log("Cleanup: deleted %d extra copies and %d orphan chunk files." % (extra, len(orphans)))
+        return extra, len(orphans)
+
     def download(self, key, max_sources=None):
         return self.downloader.download(key, max_sources)
 
@@ -341,6 +399,22 @@ def show_map(peer, key):
         print("  %-12s stores %d of %d chunks%s" % (peer.members.name_of(p), c, m["num_chunks"], state))
 
 
+def show_storage(peer):
+    per_file, orphans = peer.storage.disk_report()
+    total = 0
+    for m in peer.storage.all_manifests():
+        fid = m["file_id"]
+        chunks, size = per_file.get(fid, [0, 0])
+        total += size
+        copies = [len([p for p in peer.storage.holders(fid, i)
+                       if p == peer.my_id or peer.members.is_alive(p)])
+                  for i in range(m["num_chunks"])]
+        over = sum(1 for c in copies if c > storage_mod.REPLICAS)
+        print("  %-20s I store %d/%d chunks (%.1f KB)  min copies=%d  chunks with extra copies=%d" % (
+            m["name"], chunks, m["num_chunks"], size / 1024.0, min(copies), over))
+    print("  total chunk data on disk: %.1f KB, orphan chunk files: %d" % (total / 1024.0, len(orphans)))
+
+
 def show_stats(peer):
     print("packets sent=%d dropped(simulated)=%d retransmissions=%d" % (
         peer.sock.sent, peer.sock.dropped, peer.retransmissions()))
@@ -376,6 +450,14 @@ def cli(peer):
                 show_map(peer, arg)
             elif cmd == "/stats":
                 show_stats(peer)
+            elif cmd == "/history":
+                peer.chat.show(int(arg) if arg else 20)
+            elif cmd == "/storage":
+                show_storage(peer)
+            elif cmd == "/scrub":
+                threading.Thread(target=peer.scrub, daemon=True).start()
+            elif cmd == "/cleanup":
+                threading.Thread(target=peer.cleanup, daemon=True).start()
             elif cmd == "/loss":
                 peer.sock.loss = float(arg)
                 print("loss set to", peer.sock.loss)

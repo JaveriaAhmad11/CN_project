@@ -32,12 +32,13 @@ The protocol supports the following message types, routed to the appropriate han
 | 10 | CHUNK_REQUEST | Yes | Requests a specific chunk from a peer. |
 | 11 | CHUNK_DATA | Yes | Carries the actual binary data of a 32KB chunk. |
 | 12 | CHUNK_NACK | Yes | "Negative ACK" - tells a peer they don't have the requested chunk. |
+| 13 | HISTORY | Yes | Syncs the last 50 chat messages to a newly joined peer. |
 
 ## 3. Expected Message Sequences
 
 **A. Join Flow:**
 1. New peer broadcasts `JOIN` (or sends to a bootstrap peer).
-2. Existing peers add the new peer and reply with `JOIN_REPLY` (peer list), `FILE_LIST`, and `CHUNK_MAP`.
+2. Existing peers add the new peer and reply with `JOIN_REPLY` (peer list), `FILE_LIST`, `CHUNK_MAP`, and `HISTORY`.
 3. The newcomer sends `JOIN` to the peers it just learned about.
 4. After ~2 seconds, the newcomer runs `take_share()`, sending `CHUNK_REQUEST` to holders.
 
@@ -65,3 +66,30 @@ The protocol supports the following message types, routed to the appropriate han
 The protocol uses CRC32 to detect corrupted packets. As proven in my unit test, if even a single bit is flipped in the payload, the CRC32 check fails, and `parse_packet()` returns `None`, preventing corrupted data from entering the system.
 
 *(See attached screenshot: `javeria_crc_proof.png`)*
+
+## 5. Design Trade-offs
+The assignment has no single correct design. The table lists what we chose, what else was possible, and why.
+
+| Topic | Our choice | Alternatives considered | Reason and trade-off |
+| :--- | :--- | :--- | :--- |
+| **Reliability scheme** | Selective Repeat, window 32 | Stop-and-wait, Go-Back-N | Stop-and-wait wastes the network (one packet per round trip). Go-Back-N resends good packets after one loss. Selective Repeat resends only the lost packet but needs a receiver buffer and one ACK per packet. |
+| **Timeout** | Adaptive, 2 x smoothed RTT, min 0.15 s | Fixed 500 ms | Adapts to the network. A very small timeout causes needless duplicates; a large one slows recovery. |
+| **Chat delivery** | Reliable unicast to each peer | UDP multicast or broadcast, gossip | Broadcast is unreliable and limited to a LAN. Unicast costs N-1 packets per message but gives guaranteed ordered delivery. |
+| **Chat versus file throughput** | Separate stream per traffic type | One shared sequence space | Chat messages are not stuck behind large file transfers. |
+| **Chunk size** | 32 KB | 4 KB, 1 MB | Small chunks give more parallelism and finer failover but a longer manifest and more requests. |
+| **Replication factor** | R = 2 | R = 1, R = 4 | R = 1 loses data when a peer dies. R = 4 means every peer holds the whole file. R = 2 survives one failure at 2x storage. |
+| **Replica placement** | Sorted ids, round robin | Random, consistent hashing | Deterministic: every peer computes the same result with no coordination. |
+| **Failure detection** | Heartbeat 1 s, timeout 5 s | 0.5 s / 2 s, 3 s / 15 s | Shorter detects faster but gives false alarms under packet loss; longer is robust but slow. |
+| **Download strategy** | Worker per source, end-game re-requests | One source at a time | Parallel speed and fast failover, at the price of a few duplicate requests at the end. |
+| **Integrity** | CRC32 per packet, SHA-256 per chunk and file | CRC only | SHA-256 also detects corruption on disk and wrong data from a faulty peer. |
+
+### 5.1 Experimental Results (Unit Test Proof)
+As seen in our unit test (`test_reliable.py`), with 20% packet loss, all 100 messages arrived in order. However, when we simulated 50% loss, the test timed out because the sender spent all its time retransmitting. When we removed the ACK for duplicates, the sender got stuck in an endless loop. This proves that while Selective Repeat with adaptive timeouts has overhead, it is absolutely necessary for guaranteeing order and preventing infinite loops in lossy networks.
+
+## 6. Chat History and Storage Maintenance
+
+### 6.1 Chat History
+Every chat message is appended to a local history file on disk (`chat_history.log`). When a new peer joins the network, existing peers send them a `HISTORY` message (reliable, Stream 1) containing the last 50 chat messages. The newcomer merges these messages and skips duplicates by checking the sender ID, timestamp, and text. This ensures that a user who joins late can still see the recent conversation context.
+
+### 6.2 Storage Maintenance
+To keep the distributed storage healthy, the system performs integrity checks (`/scrub`) to recompute SHA-256 hashes of stored chunks and re-download corrupt ones. It also performs cleanup (`/cleanup`) to remove orphaned chunks and extra copies, ensuring exactly `R` (2) copies exist per chunk. After a restart, a peer re-announces its existing chunks so they are not downloaded again.
