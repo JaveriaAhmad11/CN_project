@@ -93,3 +93,17 @@ Every chat message is appended to a local history file on disk (`chat_history.lo
 
 ### 6.2 Storage Maintenance
 To keep the distributed storage healthy, the system performs integrity checks (`/scrub`) to recompute SHA-256 hashes of stored chunks and re-download corrupt ones. It also performs cleanup (`/cleanup`) to remove orphaned chunks and extra copies, ensuring exactly `R` (2) copies exist per chunk. After a restart, a peer re-announces its existing chunks so they are not downloaded again.
+
+## 7. Flow Diagrams
+
+### Figure 2: Header Layout
+![Header Layout](Packet_Header_Layout.png)
+
+### Figure 3: Join Sequence
+![Join Sequence](Join_Sequence.png)
+
+### Figure 4: Reliable Send with Lost Packet
+![Reliable Send](Reliable_Send.png)
+
+### Figure 5: Group Chat Flow
+![Group Chat Flow](Group_Chat_Flow.png)
