@@ -23,7 +23,7 @@ from protocol import decode_json
 from peer import Peer
 
 QUICK = "quick" in sys.argv
-TRIALS = 1 if QUICK else 2
+TRIALS = 1 if QUICK else 3
 FOLDER = "exp_data"
 RESULTS = "results"
 FILE_SIZE = 2 * 1024 * 1024
