@@ -80,12 +80,12 @@
 **Goal:** Draw diagrams and merge the team's report.
 
 ### 🛠️ What I plan to do:
-- [ ] Draw **Figure 2 (Header Layout)** using draw.io.
-- [ ] Draw **Figure 3 (Join Sequence)** showing JOIN, JOIN_REPLY, and HISTORY.
-- [ ] Draw **Figure 4 (Reliable Send)** showing packet loss, timeout, and ACK loss.
-- [ ] Draw **Figure 5 (Group Chat Flow)**.
-- [ ] Collect Shamin's graphs and Laraib's flow sections.
-- [ ] Merge all parts into the final `report.md`.
+- [x] Draw **Figure 2 (Header Layout)** using draw.io.
+- [x] Draw **Figure 3 (Join Sequence)** showing JOIN, JOIN_REPLY, and HISTORY.
+- [x] Draw **Figure 4 (Reliable Send)** showing packet loss, timeout, and ACK loss.
+- [x] Draw **Figure 5 (Group Chat Flow)**.
+- [x] Collect Shamin's graphs and Laraib's flow sections.
+- [x] Merge all parts into the final `report.md`.
 
 ---
 
@@ -93,9 +93,9 @@
 **Goal:** Practice the live demo and viva questions.
 
 ### 🛠️ What I plan to do:
-- [ ] Rehearse demo as Peer A (share files, simulate loss with `/loss 0.2`).
-- [ ] Prepare viva answer: *"How does chat history work when a new peer joins?"* (Answer: Existing peers send a reliable `HISTORY` message with the last 50 messages; the newcomer merges them and drops duplicates).
-- [ ] Rehearse the `/crash` mid-download scenario with the team.
+- [x] Rehearse demo as Peer A (share files, simulate loss with `/loss 0.2`).
+- [x] Prepare viva answer: *"How does chat history work when a new peer joins?"* (Answer: Existing peers send a reliable `HISTORY` message with the last 50 messages; the newcomer merges them and drops duplicates).
+- [x] Rehearse the `/crash` mid-download scenario with the team.
 
 ---
 
