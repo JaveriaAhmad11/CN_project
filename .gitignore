@@ -2,6 +2,12 @@ __pycache__/
 *.pyc
 p2p_project.zip
 selftest_data/
+exp_data/
 data_*/
 results/
 *.bin
+exp_data/
+selftest_data/
+data_*/
+__pycache__/
+*.pyc
